@@ -32,7 +32,7 @@ shirt_files = st.file_uploader("🎨 Upload Shirt Templates", type=["png", "jpg"
 
 # --- Clear Button ---
 if st.button("🔄 Start Over (Clear Generated Mockups)"):
-    for key in ["design_files", "design_names", "design_files"]:
+    for key in ["design_files", "design_names", "zip_files_output"]:
         if key in st.session_state:
             del st.session_state[key]
     st.rerun()
