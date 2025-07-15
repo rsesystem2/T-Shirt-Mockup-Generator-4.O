@@ -17,8 +17,8 @@ Preview placement and generate mockups in batches.
 # --- Sidebar Controls ---
 plain_padding_ratio = st.sidebar.slider("Padding Ratio – Plain Shirt", 0.1, 1.0, 0.45, 0.05)
 model_padding_ratio = st.sidebar.slider("Padding Ratio – Model Shirt", 0.1, 1.0, 0.35, 0.05)
-plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain Shirt (%)", -50, 100, -7, 1)
-model_offset_pct = st.sidebar.slider("Vertical Offset – Model Shirt (%)", -50, 100, 3, 1)
+plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain Shirt (%)", -50, 100, 24, 1)
+model_offset_pct = st.sidebar.slider("Vertical Offset – Model Shirt (%)", -50, 100, 38, 1)
 
 # --- Session Setup ---
 if "zip_files_output" not in st.session_state:
@@ -32,7 +32,7 @@ shirt_files = st.file_uploader("🎨 Upload Shirt Templates", type=["png", "jpg"
 
 # --- Clear Button ---
 if st.button("🔄 Start Over (Clear Generated Mockups)"):
-    for key in ["design_files", "design_names", "zip_files_output"]:
+    for key in ["design_files", "design_names", "design_files"]:
         if key in st.session_state:
             del st.session_state[key]
     st.rerun()
