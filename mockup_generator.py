@@ -7,17 +7,18 @@ import cv2
 import os
 
 st.set_page_config(page_title="Shirt Mockup Generator", layout="centered")
-st.title("👕 Shirt Mockup Generator with Batching")
+st.title("👕 Shirt Mockup Generator with Batching (JPG Output)")
 
 st.markdown("""
 Upload multiple design PNGs and shirt templates.  
-Preview placement and generate mockups in batches.
+Preview placement and generate mockups in batches.  
+🖼️ Output format: **JPG (smaller size)**
 """)
 
 # --- Sidebar Controls ---
 plain_padding_ratio = st.sidebar.slider("Padding Ratio – Plain Shirt", 0.1, 1.0, 0.45, 0.05)
-model_padding_ratio = st.sidebar.slider("Padding Ratio – Model Shirt", 0.1, 1.0, 0.45, 0.05)
-plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain Shirt (%)", -50, 100, 24, 1)
+model_padding_ratio = st.sidebar.slider("Padding Ratio – Model Shirt", 0.1, 1.0, 0.35, 0.05)
+plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain Shirt (%)", -50, 100, 23, 1)
 model_offset_pct = st.sidebar.slider("Vertical Offset – Model Shirt (%)", -50, 100, 38, 1)
 
 # --- Session Setup ---
@@ -102,7 +103,7 @@ if design_files and shirt_files:
 
         preview = shirt.copy()
         preview.paste(resized_design, (x, y), resized_design)
-        st.image(preview, caption="📸 Live Mockup Preview", use_container_width=True)
+        st.image(preview, caption="📸 Live Mockup Preview (JPG Simulation)", use_container_width=True)
     except Exception as e:
         st.error(f"⚠️ Preview failed: {e}")
 
@@ -147,10 +148,17 @@ if st.button("🚀 Generate Mockups for Selected Batch"):
                         shirt_copy = shirt.copy()
                         shirt_copy.paste(resized_design, (x, y), resized_design)
 
-                        output_name = f"{graphic_name}_{color_name}_tee.png"
+                        # --- JPG OUTPUT ---
+                        output_name = f"{graphic_name}_{color_name}_tee.jpg"
                         img_byte_arr = io.BytesIO()
-                        shirt_copy.save(img_byte_arr, format='PNG')
+
+                        # Convert to RGB (JPG does not support transparency)
+                        rgb_shirt = shirt_copy.convert("RGB")
+
+                        # Save as optimized JPG
+                        rgb_shirt.save(img_byte_arr, format='JPEG', quality=90, optimize=True)
                         img_byte_arr.seek(0)
+
                         zipf.writestr(output_name, img_byte_arr.getvalue())
 
                 inner_zip_buffer.seek(0)
@@ -158,8 +166,9 @@ if st.button("🚀 Generate Mockups for Selected Batch"):
 
         master_zip.seek(0)
         st.download_button(
-            label="📦 Download All Mockups (Grouped by Design)",
+            label="📦 Download All Mockups (Grouped by Design, JPG Format)",
             data=master_zip,
-            file_name="all_mockups_by_design.zip",
+            file_name="all_mockups_by_design_jpg.zip",
             mime="application/zip"
         )
+
