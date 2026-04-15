@@ -6,173 +6,161 @@ import io
 import cv2
 import os
 
-st.set_page_config(page_title="Pro Shirt Mockup Generator", layout="centered")
-st.title("👕 Pro Shirt Mockup Generator (Realistic Blending)")
+st.set_page_config(page_title="Premium Mockup Generator", layout="centered")
+st.title("👕 Premium Shirt Mockup Generator")
 
 st.markdown("""
-Upload designs and templates. This version uses **Texture Mapping** and **Multiply Blending** to make designs follow the fabric's natural shadows and folds.
+**Pro Edition:** Uses OpenCV Displacement Mapping to warp designs around wrinkles. 
+Best for dark shirts to keep colors vibrant while maintaining high realism.
 """)
 
-# --- Sidebar: Placement Controls ---
+# --- Sidebar: Logic Controls ---
 st.sidebar.header("📍 Placement Settings")
-plain_padding_ratio = st.sidebar.slider("Padding Ratio – Plain Shirt", 0.1, 1.0, 0.45, 0.05)
-model_padding_ratio = st.sidebar.slider("Padding Ratio – Model Shirt", 0.1, 1.0, 0.35, 0.05)
-plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain Shirt (%)", -50, 100, 23, 1)
-model_offset_pct = st.sidebar.slider("Vertical Offset – Model Shirt (%)", -50, 100, 38, 1)
+plain_padding_ratio = st.sidebar.slider("Padding Ratio – Plain", 0.1, 1.0, 0.45, 0.05)
+model_padding_ratio = st.sidebar.slider("Padding Ratio – Model", 0.1, 1.0, 0.35, 0.05)
+plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain (%)", -50, 100, 23, 1)
+model_offset_pct = st.sidebar.slider("Vertical Offset – Model (%)", -50, 100, 38, 1)
 
-# --- Sidebar: Realism Controls ---
-st.sidebar.header("✨ Realism Settings")
-ink_opacity = st.sidebar.slider("Ink Opacity (Breathability)", 0.5, 1.0, 0.92, 0.01)
-shadow_intensity = st.sidebar.slider("Texture/Shadow Depth", 0.0, 2.0, 1.1, 0.1)
-blur_edges = st.sidebar.checkbox("Subtle Edge Softening (Realistic Ink)", value=True)
+st.sidebar.header("✨ Premium Realism")
+warp_intensity = st.sidebar.slider("Warp/Displacement Strength", 0.0, 5.0, 1.5, 0.5)
+ink_vibrancy = st.sidebar.slider("Ink Vibrancy", 0.5, 1.5, 1.1, 0.05)
+texture_depth = st.sidebar.slider("Fabric Texture Depth", 0.1, 1.0, 0.4, 0.05)
 
-# --- Session Setup ---
-if "design_names" not in st.session_state:
-    st.session_state.design_names = {}
-
-# --- Helper: Realistic Blending Engine ---
-def apply_realistic_blending(shirt_bg, design_img, x, y, size):
-    # 1. Prepare design
+# --- Helper: Premium Displacement & Blending Engine ---
+def apply_premium_mockup(shirt_bg, design_img, x, y, size):
+    # 1. Resize Design
     design_res = design_img.resize(size, Image.Resampling.LANCZOS)
     
-    # 2. Create design layer
-    design_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
-    design_layer.paste(design_res, (x, y), design_res)
+    # 2. DISPLACEMENT MAPPING (Warping design to wrinkles)
+    # Convert shirt area to grayscale for analysis
+    shirt_np = np.array(shirt_bg.convert("RGB"))
+    roi = shirt_np[y:y+size[1], x:x+size[0]]
+    
+    # Ensure ROI and design match (handling edge cases)
+    if roi.shape[0] != size[1] or roi.shape[1] != size[0]:
+        # Fallback if bbox is slightly off-canvas
+        return Image.alpha_composite(shirt_bg.convert("RGBA"), Image.new("RGBA", shirt_bg.size))
 
-    # 3. SELECTIVE SHADOW MAPPING (The key change)
-    # Convert shirt to grayscale and isolate only the "dark" folds
-    shirt_gray = shirt_bg.convert("L")
+    roi_gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
     
-    # We use 'Automatic Contrast' to find the deepest wrinkles
-    # Then we invert it so the wrinkles become a mask
-    wrinkle_mask = ImageEnhance.Contrast(shirt_gray).enhance(2.0)
+    # Use Sobel gradients to find "slopes" of fabric folds
+    grad_x = cv2.Sobel(roi_gray, cv2.CV_32F, 1, 0, ksize=5)
+    grad_y = cv2.Sobel(roi_gray, cv2.CV_32F, 0, 1, ksize=5)
     
-    # 4. Multiply ONLY where the wrinkles are
-    # Instead of multiplying the whole image, we use the shirt's texture 
-    # as an Alpha Mask for a black layer. This puts 'fake' shadows on the design.
-    shadow_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 255))
-    shadow_map = ImageChops.multiply(design_layer, wrinkle_mask.convert("RGBA"))
+    # Map the design pixels based on the shirt's physical folds
+    design_np = np.array(design_res)
+    h, w = design_np.shape[:2]
+    xx, yy = np.meshgrid(np.arange(w), np.arange(h))
     
-    # 5. The "Composite"
-    # Put the vibrant design down first
+    map_x = (xx + grad_x * (warp_intensity * 0.1)).astype(np.float32)
+    map_y = (yy + grad_y * (warp_intensity * 0.1)).astype(np.float32)
+    
+    warped_design = cv2.remap(design_np, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_TRANSPARENT)
+    design_final = Image.fromarray(warped_design).filter(ImageFilter.GaussianBlur(0.3))
+
+    # 3. ADVANCED BLENDING (Keeping the blue vibrant)
+    # Create the full design layer
+    design_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
+    design_layer.paste(design_final, (x, y), design_final)
+    
+    # Enhance the vibrant colors of the original graphic
+    design_layer = ImageEnhance.Color(design_layer).enhance(ink_vibrancy)
+
+    # 4. SELECTIVE SHADOWS (Linear Burn style)
+    # We only apply the darkest shirt wrinkles to the design
+    shirt_gray_full = shirt_bg.convert("L")
+    texture_mask = ImageEnhance.Contrast(shirt_gray_full).enhance(2.0)
+    
+    # Composite the vibrant design onto the shirt
     combined = Image.alpha_composite(shirt_bg.convert("RGBA"), design_layer)
     
-    # Overlay the wrinkles at a lower opacity so it doesn't fade the colors
-    # This keeps your Gwest Dept blues punchy but adds the 'dip' of the wrinkles
-    final_output = Image.blend(combined, Image.alpha_composite(combined, shadow_map), 0.3)
+    # Final touch: Gently blend the fabric texture back in so it's not a 'sticker'
+    # but don't let it fade the blue!
+    shadow_map = ImageChops.multiply(design_layer, texture_mask.convert("RGBA"))
+    result = Image.blend(combined, Image.alpha_composite(combined, shadow_map), texture_depth)
 
-    return final_output
+    return result
 
 # --- Helper: Bounding Box ---
 def get_shirt_bbox(pil_image):
     img_cv = np.array(pil_image.convert("RGB"))[:, :, ::-1]
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 240, 255, cv2.THRESH_BINARY_INV)
+    _, thresh = cv2.threshold(cv2.GaussianBlur(gray, (5, 5), 0), 240, 255, cv2.THRESH_BINARY_INV)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        largest = max(contours, key=cv2.contourArea)
-        return cv2.boundingRect(largest)
-    return None
+    return cv2.boundingRect(max(contours, key=cv2.contourArea)) if contours else None
 
-# --- Upload Section ---
+# --- Upload & State Management ---
 design_files = st.file_uploader("📌 Upload Design PNGs", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 shirt_files = st.file_uploader("🎨 Upload Shirt Templates", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
-if st.button("🔄 Start Over"):
+if "design_names" not in st.session_state:
     st.session_state.design_names = {}
-    st.rerun()
 
-# --- Design Naming ---
+# --- Naming & Batching ---
 if design_files:
-    st.markdown("### ✏️ Name Your Designs")
     for i, file in enumerate(design_files):
-        default_name = os.path.splitext(file.name)[0]
-        st.session_state.design_names[file.name] = st.text_input(
-            f"Name for {file.name}", value=default_name, key=f"name_{i}"
-        )
-
-# --- Batch Controls ---
-if design_files:
-    total_designs = len(design_files)
-    batch_start = st.number_input("Start Design #", 1, total_designs, 1)
-    batch_end = st.number_input("End Design #", 1, total_designs, min(20, total_designs))
+        if file.name not in st.session_state.design_names:
+            st.session_state.design_names[file.name] = os.path.splitext(file.name)[0]
+    
+    total = len(design_files)
+    batch_start = st.number_input("Start #", 1, total, 1)
+    batch_end = st.number_input("End #", 1, total, min(20, total))
     selected_batch = design_files[batch_start-1:batch_end]
 
-# --- Live Preview ---
+# --- Preview ---
 if design_files and shirt_files:
     st.markdown("---")
-    st.markdown("### 👀 Realistic Preview")
     sel_design = st.selectbox("Preview Design", design_files, format_func=lambda x: x.name)
     sel_shirt = st.selectbox("Preview Template", shirt_files, format_func=lambda x: x.name)
 
     try:
-        sel_design.seek(0); design_img = Image.open(sel_design).convert("RGBA")
-        sel_shirt.seek(0); shirt_img = Image.open(sel_shirt).convert("RGBA")
+        sel_design.seek(0); d_img = Image.open(sel_design).convert("RGBA")
+        sel_shirt.seek(0); s_img = Image.open(sel_shirt).convert("RGBA")
 
-        is_model = "model" in sel_shirt.name.lower()
-        offset_pct = model_offset_pct if is_model else plain_offset_pct
-        pad = model_padding_ratio if is_model else plain_padding_ratio
+        is_m = "model" in sel_shirt.name.lower()
+        off = model_offset_pct if is_m else plain_offset_pct
+        pad = model_padding_ratio if is_m else plain_padding_ratio
 
-        bbox = get_shirt_bbox(shirt_img)
+        bbox = get_shirt_bbox(s_img)
         if bbox:
             sx, sy, sw, sh = bbox
-            scale = min(sw/design_img.width, sh/design_img.height, 1.0) * pad
-            nw, nh = int(design_img.width * scale), int(design_img.height * scale)
-            x, y = sx + (sw - nw)//2, sy + int(sh * offset_pct/100)
+            sc = min(sw/d_img.width, sh/d_img.height, 1.0) * pad
+            nw, nh = int(d_img.width*sc), int(d_img.height*sc)
+            px, py = sx + (sw-nw)//2, sy + int(sh*off/100)
+            
+            preview = apply_premium_mockup(s_img, d_img, px, py, (nw, nh))
+            st.image(preview, caption="Premium Vibrant Mockup", use_container_width=True)
         else:
-            nw, nh = design_img.size
-            x, y = (shirt_img.width - nw)//2, (shirt_img.height - nh)//2
-
-        preview = apply_realistic_blending(shirt_img, design_img, x, y, (nw, nh))
-        st.image(preview, caption="Final Realistic Output (Simulated JPG)", use_container_width=True)
+            st.warning("Could not detect shirt area. Check background color.")
     except Exception as e:
-        st.error(f"Preview Error: {e}")
+        st.error(f"Error: {e}")
 
-# --- Batch Process ---
-if st.button("🚀 Generate Realistic Batch"):
-    if not (selected_batch and shirt_files):
-        st.warning("Upload designs and templates first.")
-    else:
+# --- Batch Generate ---
+if st.button("🚀 Generate Premium Batch"):
+    if selected_batch and shirt_files:
         master_zip = io.BytesIO()
         with zipfile.ZipFile(master_zip, "w", zipfile.ZIP_DEFLATED) as master_zipf:
-            progress_bar = st.progress(0)
-            
+            progress = st.progress(0)
             for idx, d_file in enumerate(selected_batch):
-                g_name = st.session_state.design_names.get(d_file.name, "design")
                 d_file.seek(0); d_img = Image.open(d_file).convert("RGBA")
-                
-                inner_zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(inner_zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+                inner_zip = io.BytesIO()
+                with zipfile.ZipFile(inner_zip, "w", zipfile.ZIP_DEFLATED) as zf:
                     for s_file in shirt_files:
-                        c_name = os.path.splitext(s_file.name)[0]
                         s_file.seek(0); s_img = Image.open(s_file).convert("RGBA")
-
-                        is_m = "model" in s_file.name.lower()
-                        off = model_offset_pct if is_m else plain_offset_pct
-                        p_ratio = model_padding_ratio if is_m else plain_padding_ratio
-
                         bbox = get_shirt_bbox(s_img)
                         if bbox:
-                            sx, sy, sw, sh = bbox
-                            sc = min(sw/d_img.width, sh/d_img.height, 1.0) * p_ratio
+                            is_m = "model" in s_file.name.lower()
+                            off = model_offset_pct if is_m else plain_offset_pct
+                            sc = min(bbox[2]/d_img.width, bbox[3]/d_img.height, 1.0) * (model_padding_ratio if is_m else plain_padding_ratio)
                             nw, nh = int(d_img.width*sc), int(d_img.height*sc)
-                            px, py = sx + (sw-nw)//2, sy + int(sh*off/100)
-                        else:
-                            nw, nh = d_img.size
-                            px, py = (s_img.width-nw)//2, (s_img.height-nh)//2
-
-                        # Apply Realistic Logic
-                        final_img = apply_realistic_blending(s_img, d_img, px, py, (nw, nh))
-                        
-                        # Save to JPG
-                        img_io = io.BytesIO()
-                        final_img.convert("RGB").save(img_io, format='JPEG', quality=90, optimize=True)
-                        zipf.writestr(f"{g_name}_{c_name}.jpg", img_io.getvalue())
-                
-                inner_zip_buffer.seek(0)
-                master_zipf.writestr(f"{g_name}.zip", inner_zip_buffer.read())
-                progress_bar.progress((idx + 1) / len(selected_batch))
-
-        master_zip.seek(0)
-        st.download_button("📦 Download All Mockups", master_zip, "mockups_realistic.zip", "application/zip")
+                            px, py = bbox[0] + (bbox[2]-nw)//2, bbox[1] + int(bbox[3]*off/100)
+                            
+                            res = apply_premium_mockup(s_img, d_img, px, py, (nw, nh))
+                            img_io = io.BytesIO()
+                            res.convert("RGB").save(img_io, format='JPEG', quality=95)
+                            zf.writestr(f"{s_file.name}_{d_file.name}.jpg", img_io.getvalue())
+                inner_zip.seek(0)
+                master_zipf.writestr(f"{d_file.name}.zip", inner_zip.read())
+                progress.progress((idx+1)/len(selected_batch))
+        
+        st.download_button("📦 Download Zip", master_zip.getvalue(), "premium_mockups.zip")
