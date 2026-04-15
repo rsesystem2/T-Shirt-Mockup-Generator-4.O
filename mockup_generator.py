@@ -32,41 +32,36 @@ if "design_names" not in st.session_state:
 
 # --- Helper: Realistic Blending Engine ---
 def apply_realistic_blending(shirt_bg, design_img, x, y, size):
-    # 1. Resize design
+    # 1. Prepare design
     design_res = design_img.resize(size, Image.Resampling.LANCZOS)
     
-    # 2. Create the design layer
+    # 2. Create design layer
     design_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
     design_layer.paste(design_res, (x, y), design_res)
 
-    # 3. Analyze shirt brightness to prevent "fading" on black
-    shirt_stat = ImageEnhance.Brightness(shirt_bg.convert("L")).enhance(1.0)
-    avg_brightness = np.array(shirt_stat).mean()
-    
-    # 4. Create Texture/Shadow Map
-    # If the shirt is dark, we reduce the intensity of the 'Multiply' 
-    # so it doesn't kill the design colors.
+    # 3. SELECTIVE SHADOW MAPPING (The key change)
+    # Convert shirt to grayscale and isolate only the "dark" folds
     shirt_gray = shirt_bg.convert("L")
-    if avg_brightness < 100:  # Dark shirt logic
-        # On dark shirts, we want to extract the highlights/folds
-        texture_map = ImageEnhance.Contrast(shirt_gray).enhance(shadow_intensity * 0.5)
-    else:
-        texture_map = ImageEnhance.Contrast(shirt_gray).enhance(shadow_intensity)
     
-    texture_map_rgba = texture_map.convert("RGBA")
+    # We use 'Automatic Contrast' to find the deepest wrinkles
+    # Then we invert it so the wrinkles become a mask
+    wrinkle_mask = ImageEnhance.Contrast(shirt_gray).enhance(2.0)
+    
+    # 4. Multiply ONLY where the wrinkles are
+    # Instead of multiplying the whole image, we use the shirt's texture 
+    # as an Alpha Mask for a black layer. This puts 'fake' shadows on the design.
+    shadow_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 255))
+    shadow_map = ImageChops.multiply(design_layer, wrinkle_mask.convert("RGBA"))
+    
+    # 5. The "Composite"
+    # Put the vibrant design down first
+    combined = Image.alpha_composite(shirt_bg.convert("RGBA"), design_layer)
+    
+    # Overlay the wrinkles at a lower opacity so it doesn't fade the colors
+    # This keeps your Gwest Dept blues punchy but adds the 'dip' of the wrinkles
+    final_output = Image.blend(combined, Image.alpha_composite(combined, shadow_map), 0.3)
 
-    # 5. The "Punchy" Blend
-    # First, put the design on normally so colors stay 100%
-    base_composite = Image.alpha_composite(shirt_bg.convert("RGBA"), design_layer)
-    
-    # Second, subtly multiply the shirt texture OVER the design area only
-    # This keeps the design vibrant while adding fabric folds
-    shadowed_design = ImageChops.multiply(design_layer, texture_map_rgba)
-    
-    # Blend the shadowed version with the clean version based on ink opacity
-    final_design_layer = Image.blend(design_layer, shadowed_design, ink_opacity)
-
-    return Image.alpha_composite(shirt_bg.convert("RGBA"), final_design_layer)
+    return final_output
 
 # --- Helper: Bounding Box ---
 def get_shirt_bbox(pil_image):
