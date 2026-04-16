@@ -6,98 +6,98 @@ import io
 import cv2
 import os
 
-st.set_page_config(page_title="Pro Mockup Engine", layout="centered")
-st.title("👕 Premium Universal Mockup Generator")
+st.set_page_config(page_title="Premium Mockup Studio", layout="wide")
+st.title("👕 Premium Pro-Grade Mockup Generator")
 
 st.markdown("""
-**Advanced Rendering Engine:**
-* **Bilateral Warp:** Smoothly bends designs over folds without pixel distortion.
-* **Luminance Blending:** Design reacts to lighting (highlights/shadows) naturally.
-* **Zero-Safety:** Set sliders to **0** for 100% original color accuracy.
+**Professional Blending Engine:** Designed for high-fidelity, sellable results.
+* **Bilateral Warp:** Physical pixel displacement along fabric folds.
+* **High-Pass Texture:** Embosses cotton grain onto the ink for a 'printed' feel.
+* **Color Guard:** Automatically protects ink vibrancy on black and white garments.
 """)
 
-# --- Sidebar: Logic Controls ---
-st.sidebar.header("📍 Placement Settings")
-plain_padding_ratio = st.sidebar.slider("Padding Ratio – Plain", 0.1, 1.0, 0.45, 0.05)
-model_padding_ratio = st.sidebar.slider("Padding Ratio – Model", 0.1, 1.0, 0.35, 0.05)
-plain_offset_pct = st.sidebar.slider("Vertical Offset – Plain (%)", -50, 100, 23, 1)
-model_offset_pct = st.sidebar.slider("Vertical Offset – Model (%)", -50, 100, 38, 1)
+# --- Sidebar: Advanced Settings ---
+st.sidebar.header("📍 Master Controls")
+p_pad = st.sidebar.slider("Padding - Plain", 0.1, 1.0, 0.45, 0.05)
+m_pad = st.sidebar.slider("Padding - Model", 0.1, 1.0, 0.35, 0.05)
+p_off = st.sidebar.slider("Vertical Offset - Plain (%)", -50, 100, 23, 1)
+m_off = st.sidebar.slider("Vertical Offset - Model (%)", -50, 100, 38, 1)
 
-st.sidebar.header("✨ Premium Realism")
-warp_intensity = st.sidebar.slider("Warp/Fold Strength", 0.0, 5.0, 1.5, 0.1)
-lighting_depth = st.sidebar.slider("Fabric Lighting Depth", 0.0, 1.0, 0.3, 0.05)
-ink_saturation = st.sidebar.slider("Color Vibrancy", 0.5, 1.5, 1.0, 0.05)
+st.sidebar.header("✨ Realism Engine")
+warp_str = st.sidebar.slider("Warp/Fold Intensity", 0.0, 5.0, 1.8, 0.1)
+grain_depth = st.sidebar.slider("Fabric Grain Depth", 0.0, 1.0, 0.3, 0.05)
+ink_pop = st.sidebar.slider("Ink Saturation Boost", 0.5, 2.0, 1.05, 0.05)
 
-# --- Helper: The Premium Rendering Engine ---
+# --- The Rendering Engine ---
 def apply_premium_render(shirt_bg, design_img, x, y, size):
-    # 1. High-Precision Resize
+    # 1. High-Res Preparation & Sharpness
     design_res = design_img.resize(size, Image.Resampling.LANCZOS)
-    
-    # --- SAFETY SWITCH: If 0, bypass all effects ---
-    if warp_intensity == 0 and lighting_depth == 0:
-        design_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
-        design_layer.paste(design_res, (x, y), design_res)
-        return Image.alpha_composite(shirt_bg.convert("RGBA"), design_layer)
+    if warp_str > 0:
+        design_res = design_res.filter(ImageFilter.SHARPEN)
 
-    # 2. CREATE BILATERAL HEIGHT MAP (Crucial for Black/White shirts)
+    # --- SAFETY: Zero settings return original ---
+    if warp_str == 0 and grain_depth == 0:
+        layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
+        layer.paste(design_res, (x, y), design_res)
+        return Image.alpha_composite(shirt_bg.convert("RGBA"), layer)
+
+    # 2. BILATERAL DISPLACEMENT (The Professional Secret)
     shirt_np = np.array(shirt_bg.convert("RGB"))
     roi = shirt_np[y:y+size[1], x:x+size[0]]
     roi_gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
     
-    # Bilateral filter removes 'noise' but keeps 'folds' sharp
-    # This stops the 'shattering/glitch' effect
-    smooth_map = cv2.bilateralFilter(roi_gray, 15, 75, 75)
+    # Bilateral Filter: Deletes photo noise but keeps big wrinkles
+    smooth_roi = cv2.bilateralFilter(roi_gray, 15, 75, 75)
     
-    # 3. ADVANCED DISPLACEMENT (Warping)
-    if warp_intensity > 0:
-        # Calculate gradients for the physical curves
-        grad_x = cv2.Sobel(smooth_map, cv2.CV_32F, 1, 0, ksize=3)
-        grad_y = cv2.Sobel(smooth_map, cv2.CV_32F, 0, 1, ksize=3)
+    if warp_str > 0:
+        # Sobel Gradients for pixel-shifting
+        gx = cv2.Sobel(smooth_roi, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(smooth_roi, cv2.CV_32F, 0, 1, ksize=3)
         
         design_np = np.array(design_res)
         h, w = design_np.shape[:2]
         xx, yy = np.meshgrid(np.arange(w), np.arange(h))
         
-        # Apply displacement
-        map_x = (xx + grad_x * (warp_intensity * 0.04)).astype(np.float32)
-        map_y = (yy + grad_y * (warp_intensity * 0.04)).astype(np.float32)
+        # Warp with INTER_CUBIC for best text clarity
+        mx = (xx + gx * (warp_str * 0.035)).astype(np.float32)
+        my = (yy + gy * (warp_str * 0.035)).astype(np.float32)
         
-        # Remap using INTER_CUBIC for premium sharpness
-        warped_np = cv2.remap(design_np, map_x, map_y, cv2.INTER_CUBIC, borderMode=cv2.BORDER_TRANSPARENT)
-        design_final = Image.fromarray(warped_np).filter(ImageFilter.SHARPEN)
+        warped_np = cv2.remap(design_np, mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_TRANSPARENT)
+        design_final = Image.fromarray(warped_np)
     else:
         design_final = design_res
 
-    # 4. COLOR PROTECTION
-    design_layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
-    design_layer.paste(design_final, (x, y), design_final)
-    design_layer = ImageEnhance.Color(design_layer).enhance(ink_saturation)
-
-    # 5. DYNAMIC LIGHTING BLEND (Mockey.ai Style)
-    combined = Image.alpha_composite(shirt_bg.convert("RGBA"), design_layer)
+    # 3. COLOR GUARD & LAYER ASSEMBLY
+    layer = Image.new("RGBA", shirt_bg.size, (0, 0, 0, 0))
+    layer.paste(design_final, (x, y), design_final)
     
-    if lighting_depth > 0:
-        # Create a lighting map from the shirt's luminance
-        lighting_map = shirt_bg.convert("L")
-        # Enhance contrast to find highlights and shadows
-        lighting_map = ImageEnhance.Contrast(lighting_map).enhance(2.0).convert("RGBA")
+    # Auto-Vibrancy for Darker Shirts
+    avg_lume = np.array(Image.fromarray(roi).convert("L")).mean()
+    lume_boost = ink_pop * (1.15 if avg_lume < 70 else 1.0)
+    layer = ImageEnhance.Color(layer).enhance(lume_boost)
+
+    # 4. SELECTIVE FABRIC EMBOSSING
+    combined = Image.alpha_composite(shirt_bg.convert("RGBA"), layer)
+    
+    if grain_depth > 0:
+        # Generate lighting overlay
+        tex_mask = shirt_bg.convert("L").filter(ImageFilter.FIND_EDGES)
+        tex_mask = ImageEnhance.Contrast(tex_mask).enhance(2.0).filter(ImageFilter.GaussianBlur(1))
         
-        # 'Soft Light' makes the design look 'inside' the fabric grain
-        textured_overlay = ImageChops.soft_light(combined, design_layer.convert("RGBA"))
+        # Overlay blend allows design to catch light like real ink
+        tex_overlay = ImageChops.overlay(layer, tex_mask.convert("RGBA"))
+        result = Image.blend(combined, Image.alpha_composite(combined, tex_overlay), grain_depth * 0.5)
         
-        # Primary Blend
-        result = Image.blend(combined, textured_overlay, lighting_depth)
-        
-        # Final subtle Multiply for deep creases ONLY (prevents fading)
-        crease_mask = ImageEnhance.Contrast(lighting_map).enhance(1.5).convert("RGBA")
-        shadow_final = ImageChops.multiply(design_layer, crease_mask)
-        result = Image.blend(result, Image.alpha_composite(result, shadow_final), lighting_depth * 0.3)
-        
+        # Subtle hard-shadow pass for deep creases
+        if avg_lume < 100:
+            shadow_pass = ImageChops.multiply(layer, ImageEnhance.Contrast(shirt_bg.convert("L")).enhance(1.5).convert("RGBA"))
+            result = Image.blend(result, Image.alpha_composite(result, shadow_pass), grain_depth * 0.2)
+            
         return result
     
     return combined
 
-# --- Utilities: Bounding Box & UI ---
+# --- Standard Utilities ---
 def get_shirt_bbox(pil_image):
     img_cv = np.array(pil_image.convert("RGB"))[:, :, ::-1]
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
@@ -105,54 +105,59 @@ def get_shirt_bbox(pil_image):
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return cv2.boundingRect(max(contours, key=cv2.contourArea)) if contours else None
 
-# --- Uploads ---
-design_files = st.file_uploader("📌 Upload Graphics (PNG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-shirt_files = st.file_uploader("🎨 Upload Shirt Templates", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+# --- Main App Logic ---
+col1, col2 = st.columns([1, 1])
 
-if design_files and shirt_files:
-    if "lnames" not in st.session_state: st.session_state.lnames = {}
-    for f in design_files: st.session_state.lnames[f.name] = os.path.splitext(f.name)[0]
+with col1:
+    d_files = st.file_uploader("📌 Upload Graphics", type=["png", "jpg"], accept_multiple_files=True)
+with col2:
+    s_files = st.file_uploader("🎨 Upload Templates", type=["png", "jpg"], accept_multiple_files=True)
+
+if d_files and s_files:
+    if "ln" not in st.session_state: st.session_state.ln = {}
+    for f in d_files: st.session_state.ln[f.name] = os.path.splitext(f.name)[0]
     
-    sel_d = st.selectbox("Select Design", design_files, format_func=lambda x: x.name)
-    sel_s = st.selectbox("Select Template", shirt_files, format_func=lambda x: x.name)
+    s_d = st.selectbox("Current Graphic", d_files, format_func=lambda x: x.name)
+    s_s = st.selectbox("Current Template", s_files, format_func=lambda x: x.name)
 
     try:
-        sel_d.seek(0); d_img = Image.open(sel_d).convert("RGBA")
-        sel_s.seek(0); s_img = Image.open(sel_s).convert("RGBA")
+        s_d.seek(0); di = Image.open(s_d).convert("RGBA")
+        s_s.seek(0); si = Image.open(s_s).convert("RGBA")
 
-        is_m = "model" in sel_s.name.lower()
-        off = model_offset_pct if is_m else plain_offset_pct
-        pad = model_padding_ratio if is_m else plain_padding_ratio
+        is_m = "model" in s_s.name.lower()
+        off = m_off if is_m else p_off
+        pad = m_pad if is_m else p_pad
 
-        bbox = get_shirt_bbox(s_img)
+        bbox = get_shirt_bbox(si)
         if bbox:
-            sc = min(bbox[2]/d_img.width, bbox[3]/d_img.height, 1.0) * pad
-            nw, nh = int(d_img.width*sc), int(d_img.height*sc)
+            sc = min(bbox[2]/di.width, bbox[3]/di.height, 1.0) * pad
+            nw, nh = int(di.width*sc), int(di.height*sc)
             px, py = bbox[0] + (bbox[2]-nw)//2, bbox[1] + int(bbox[3]*off/100)
             
-            # PREVIEW RENDER
-            render = apply_premium_render(s_img, d_img, px, py, (nw, nh))
-            st.image(render, caption="Final Premium Mockup", use_container_width=True)
+            final_img = apply_premium_render(si, di, px, py, (nw, nh))
+            st.image(final_img, caption="Professional High-Fidelity Render", use_container_width=True)
             
-            # EXPORT
-            if st.button("🚀 Export Premium Batch (.zip)"):
+            # --- Batch Export ---
+            if st.button("🚀 Batch Export Sellable Zip"):
                 master_zip = io.BytesIO()
                 with zipfile.ZipFile(master_zip, "w") as mzf:
-                    for df in design_files:
-                        df.seek(0); di = Image.open(df).convert("RGBA")
+                    for df in d_files:
+                        df.seek(0); cur_d = Image.open(df).convert("RGBA")
                         inner = io.BytesIO()
                         with zipfile.ZipFile(inner, "w") as zf:
-                            for sf in shirt_files:
-                                sf.seek(0); si = Image.open(sf).convert("RGBA")
-                                b = get_shirt_bbox(si)
+                            for sf in s_files:
+                                sf.seek(0); cur_s = Image.open(sf).convert("RGBA")
+                                b = get_shirt_bbox(cur_s)
                                 if b:
-                                    sc_b = min(b[2]/di.width, b[3]/di.height, 1.0) * (model_padding_ratio if "model" in sf.name.lower() else plain_padding_ratio)
-                                    nw_b, nh_b = int(di.width*sc_b), int(di.height*sc_b)
+                                    sc_b = min(b[2]/cur_d.width, b[3]/cur_d.height, 1.0) * (m_pad if "model" in sf.name.lower() else p_pad)
+                                    nw_b, nh_b = int(cur_d.width*sc_b), int(cur_d.height*sc_b)
                                     px_b, py_b = b[0] + (b[2]-nw_b)//2, b[1] + int(b[3]*off/100)
-                                    res = apply_premium_render(si, di, px_b, py_b, (nw_b, nh_b))
-                                    buf = io.BytesIO(); res.convert("RGB").save(buf, format="JPEG", quality=95)
+                                    res = apply_premium_render(cur_s, cur_d, px_b, py_b, (nw_b, nh_b))
+                                    buf = io.BytesIO(); res.convert("RGB").save(buf, format="JPEG", quality=98)
                                     zf.writestr(f"{sf.name}.jpg", buf.getvalue())
-                        inner.seek(0); mzf.writestr(f"{st.session_state.lnames[df.name]}.zip", inner.read())
-                st.download_button("📂 Download Files", master_zip.getvalue(), "premium_exports.zip")
+                        inner.seek(0); mzf.writestr(f"{st.session_state.ln[df.name]}.zip", inner.read())
+                st.download_button("📂 Download All Premium Mockups", master_zip.getvalue(), "premium_pro_export.zip")
+        else:
+            st.warning("Detection failed. Please use a clean template background.")
     except Exception as e:
-        st.error(f"Render Error: {e}")
+        st.error(f"Error: {e}")
